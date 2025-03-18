@@ -1,0 +1,544 @@
+# Joplin MCP Server
+
+A **FastMCP-based Model Context Protocol (MCP) server** for [Joplin](https://joplinapp.org/) note-taking application via its Python API [joppy](https://github.com/marph91/joppy), enabling AI assistants to interact with your Joplin notes, notebooks, and tags through a standardized interface.
+
+<!-- mcp-name: io.github.alondmnt/joplin-mcp -->
+
+## Table of Contents
+
+- [What You Can Do](#what-you-can-do)
+- [Quick Start](#quick-start)
+- [Supported Clients](#supported-clients)
+- [Example Usage](#example-usage)
+- [Tool Permissions](#tool-permissions)
+- [Notebook Allowlist](#notebook-allowlist)
+- [Advanced Configuration](#advanced-configuration)
+- [Docker](#docker)
+- [Project Structure](#project-structure)
+- [Testing](#testing)
+- [Complete Tool Reference](#complete-tool-reference)
+- [Changelog](CHANGELOG.md)
+
+## What You Can Do
+
+This MCP server provides **26 optimized tools** for comprehensive Joplin integration:
+
+### **Note Management**
+- **Find & Search**: `find_notes` (supports `trash=True` for trashed notes), `find_notes_with_tag`, `find_notes_in_notebook`, `get_all_notes`
+- **CRUD Operations**: `get_note`, `get_note_resources` (read OCR text from attached images/PDFs), `get_links`, `create_note`, `update_note`, `edit_note`, `delete_note`
+
+### **Notebook Management** 
+- **Organize**: `list_notebooks`, `create_notebook`, `update_notebook`, `delete_notebook`
+
+### **Tag Management**
+- **Categorize**: `list_tags`, `create_tag`, `update_tag`, `delete_tag`, `get_tags_by_note`
+- **Link**: `tag_note`, `untag_note`
+
+### **Trash Management**
+- **Recover**: `restore_from_trash` - Restore soft-deleted notes or notebooks
+
+### **Import**
+- **File Import**: `import_from_file` - Import Markdown, HTML, CSV, TXT, JEX files and directories
+
+### **System**
+- **Health**: `ping_joplin`
+
+## Quick Start
+
+1. Open **Joplin Desktop** → **Tools** → **Options** → **Web Clipper**
+2. **Enable** the Web Clipper service
+3. **Copy** the Authorization token
+4. Set up your preferred client below
+
+## Supported Clients
+
+> Any MCP-compatible client should work. Below are the ones with documented setup instructions.
+
+### Claude Desktop
+
+Run the automated installer:
+
+```bash
+# Install and configure everything automatically (pip)
+pip install joplin-mcp
+joplin-mcp-install
+
+# Or use zero-install with uvx (recommended if you have uv)
+uvx --from joplin-mcp joplin-mcp-install
+
+# Optional: pin a specific version/range for stability
+uvx --from joplin-mcp==0.4.1 joplin-mcp-install
+uvx --from 'joplin-mcp>=0.4,<0.5' joplin-mcp-install
+```
+
+This script will:
+- Configure your Joplin API token
+- Set tool permissions (Create/Update/Delete)
+- Set up Claude Desktop automatically
+- Test the connection
+
+After setup, restart Claude Desktop and you're ready to go!
+
+### Claude Code
+
+Install the orchestration plugin for smarter tool usage (edit vs update, long-note reading, bulk tagging):
+
+```bash
+/plugin marketplace add alondmnt/joplin-mcp
+/plugin install joplin-mcp
+```
+
+You'll be prompted for your Joplin API token on first use. The skill is invoked automatically when working with Joplin tools, or manually with `/joplin`.
+
+### Jan AI
+
+1. **Install Jan AI** from [https://jan.ai](https://jan.ai)
+
+2. **Add MCP Server** in Jan's interface:
+   - Open Jan AI
+   - Go to **Settings** → **Extensions** → **Model Context Protocol**
+   - Click **Add MCP Server**
+   - Configure:
+     - **Name**: `joplin`
+     - **Command**: `uvx --from joplin-mcp joplin-mcp-server` *(requires `uv` installed)*
+     - **Environment Variables**:
+       - `JOPLIN_TOKEN`: `your_joplin_api_token_here`
+   - Enable the server
+
+3. **Start chatting** with access to your Joplin notes!
+
+**Automated Setup (Alternative)**
+
+```bash
+# Install and configure Jan AI automatically (if Jan is already installed)
+pip install joplin-mcp
+joplin-mcp-install
+```
+
+This will detect and configure Jan AI automatically, just like Claude Desktop.
+
+### OllMCP (Local Ollama Models)
+
+**Auto-discovery (if you set up Claude Desktop first)**
+```bash
+# Install ollmcp
+pip install ollmcp
+
+# Run with auto-discovery (requires existing Claude Desktop config)
+ollmcp --auto-discovery --model qwen3:4b
+```
+
+**Manual setup (works independently)**
+```bash
+# Install ollmcp
+pip install ollmcp
+
+# Set environment variable
+export JOPLIN_TOKEN="your_joplin_api_token_here"
+
+# Run with uvx (requires uv installed)
+ollmcp --server "joplin:uvx --from joplin-mcp joplin-mcp-server" --model qwen3:4b
+
+# Or with an installed package (pip install joplin-mcp)
+ollmcp --server "joplin:joplin-mcp-server" --model qwen3:4b
+```
+
+## Example Usage
+
+Once configured, you can ask your AI assistant:
+
+- **"List all my notebooks"** - See your Joplin organization
+- **"Find notes about Python programming"** - Search your knowledge base  
+- **"Create a meeting note for today's standup"** - Quick note creation
+- **"Tag my recent AI notes as 'important'"** - Organize with tags
+- **"Show me my todos"** - Find task items with `find_notes(task=True)`
+
+## Tool Permissions
+
+The setup script offers **4 permission levels**:
+
+- **Read** (always enabled): Browse and search your notes safely
+- **Write** (optional): Create new notes, notebooks, and tags
+- **Update** (optional): Modify existing content
+- **Delete** (optional): Remove content permanently
+
+Choose the level that matches your comfort and use case.
+
+## Notebook Allowlist
+
+Restrict AI access to specific notebooks using pattern-based access control. When configured, only matching notebooks (and their contents) are visible — all other notebooks are hidden.
+
+### Quick Setup
+
+**JSON config** (`joplin-mcp.json`):
+```json
+{
+  "token": "your_token",
+  "notebook_allowlist": ["Work", "Projects/Public"]
+}
+```
+
+**Environment variable**:
+```bash
+export JOPLIN_NOTEBOOK_ALLOWLIST="Work,Projects/Public"
+```
+
+### Pattern Syntax
+
+Patterns use [gitignore/gitwildmatch](https://git-scm.com/docs/gitignore) semantics:
+
+| Pattern | Matches | Example |
+|---------|---------|---------|
+| `Work` | Exact notebook name (and all children) | `Work`, `Work/Tasks`, `Work/Notes` |
+| `Projects/*` | Direct children of Projects | `Projects/Alpha`, `Projects/Beta` |
+| `Projects/**` | All descendants recursively | `Projects/Alpha/Tasks/Q1` |
+| `!Projects/Secret` | Exclude (negate) a specific path | Everything in Projects *except* Secret |
+
+Negation patterns always win over positive patterns (any negation match on a path or ancestor denies access).
+
+### How It Works
+
+- **Hierarchical access**: Allowing a parent notebook grants access to all its children. Allowing `Projects` means notes in `Projects/Work/Tasks` are also accessible.
+- **Read protection**: `get_note`, `get_note_resources`, `find_notes`, `get_links` — notes in blocked notebooks are filtered out or rejected.
+- **Write protection**: `create_note`, `update_note`, `edit_note`, `delete_note` — operations on notes in blocked notebooks are rejected.
+- **Notebook operations**: `list_notebooks` only shows accessible notebooks. `create_notebook` is rejected both under a blocked parent and at the top level (no `parent_name`) when an allowlist is set, and `update_notebook` rejects moves to top-level (`parent_name="/"`) under the same policy — both would let the agent silently move a notebook out of allowlist-enforced scope. To grow the allowlist, create or relocate the notebook in the Joplin UI, then add it to `notebook_allowlist` and restart the server.
+- **Search filtering**: `find_notes` results are filtered to only include notes in accessible notebooks.
+- **Tag operations**: `tag_note`, `untag_note`, `get_tags_by_note` enforce access on the note's notebook.
+- **Error privacy**: Blocked access raises a generic "Notebook not accessible" error without revealing notebook names or IDs.
+
+### Configuration Examples
+
+**Single project focus** (notebook name containing a space):
+```json
+{ "notebook_allowlist": ["Work Projects"] }
+```
+
+**Multiple notebooks with exclusion:**
+```json
+{ "notebook_allowlist": ["Projects", "!Projects/Secret", "AI", "Reference"] }
+```
+
+**Glob patterns:**
+```json
+{ "notebook_allowlist": ["Projects/*", "!Projects/Private"] }
+```
+
+**No allowlist (default)** — all notebooks accessible:
+```json
+{ "notebook_allowlist": null }
+```
+
+### Startup Behavior
+
+At server startup, the allowlist is validated and logged:
+- Each entry is resolved against existing notebooks
+- Unresolvable patterns trigger warnings (but never block startup)
+- If the allowlist resolves to zero accessible notebooks, a warning is logged
+
+---
+
+## Advanced Configuration
+
+### Development Installation
+
+For developers or users who want the latest features:
+
+```bash
+git clone https://github.com/alondmnt/joplin-mcp.git
+cd joplin-mcp
+python bootstrap.py
+```
+
+`bootstrap.py` is cross-platform: it offers to create a `./venv`, runs `pip install -e .`, then launches the interactive installer. Pass `--no-venv` to install into whichever Python is already active.
+
+### Manual Configuration
+
+If you prefer manual setup or the script doesn't work:
+
+> Note on `uvx`: `uvx` runs Python applications without permanently installing them (requires `uv`: `pip install uv`). It can read and write user configuration files (e.g., Claude/Jan configs), so `uvx --from joplin-mcp joplin-mcp-install` works for setup just like a pip install.
+
+> Version pinning (optional): For long‑lived client configs or CI, you can pin or range-constrain the version for reproducibility, e.g. `uvx --from joplin-mcp==0.4.1 joplin-mcp-install` or `uvx --from 'joplin-mcp>=0.4,<0.5' joplin-mcp-install`.
+
+#### 1. Create Configuration File
+
+Create `joplin-mcp.json` in your project directory:
+
+```json
+{
+  "token": "your_api_token_here",
+  "host": "localhost", 
+  "port": 41184,
+  "timeout": 30,
+  "verify_ssl": false
+}
+```
+
+#### 2. Claude Desktop Configuration
+
+Add to your `claude_desktop_config.json`:
+
+**Option A: Using uvx (Zero-install)**
+```json
+{
+  "mcpServers": {
+    "joplin": {
+      "command": "uvx",
+      "args": ["--from", "joplin-mcp", "joplin-mcp-server"],
+      "env": {
+        "JOPLIN_TOKEN": "your_token_here"
+      }
+    }
+  }
+}
+```
+*Requires `uv` installed: `pip install uv`*
+
+**Option B: Using installed package**
+```json
+{
+  "mcpServers": {
+    "joplin": {
+      "command": "joplin-mcp-server",
+      "env": {
+        "JOPLIN_TOKEN": "your_token_here"
+      }
+    }
+  }
+}
+```
+
+#### 3. More Client Configuration Examples
+
+For additional client configurations including different transport options (HTTP, SSE, Streamable HTTP), see [client-config.json.example](client-config.json.example).
+
+This file includes configurations for:
+- **STDIO transport** (default, most compatible)
+- **HTTP transport** (basic HTTP server mode)
+- **SSE transport** (recommended for gemini-cli and OpenAI clients)
+- **Streamable HTTP transport** (advanced web clients)
+- **HTTP-compat transport** (bridges modern `/mcp` JSON-RPC with legacy `/sse`/`/messages` clients)
+
+### Tool Permission Configuration
+
+Fine-tune which operations the AI can perform by editing your config:
+
+```json
+{
+  "tools": {
+    "create_note": true,
+    "update_note": true,
+    "delete_note": false,
+    "create_notebook": true,
+    "update_notebook": false,
+    "delete_notebook": false,
+    "create_tag": true,
+    "update_tag": false,
+    "delete_tag": false,
+    "get_all_notes": false,
+    "import_from_file": true
+  }
+}
+```
+
+### Environment Variables
+
+Usable instead of a JSON config file, or alongside one:
+
+```bash
+# Connection settings
+export JOPLIN_TOKEN="your_api_token_here"
+export JOPLIN_HOST="localhost"
+export JOPLIN_PORT="41184"
+export JOPLIN_TIMEOUT="30"
+```
+
+Environment variables override the config file key by key, so the `env`
+block in your MCP client's configuration wins over whatever file the
+server discovers. A variable only takes part when it is actually set, so
+setting one leaves the rest of your file alone. Full order: direct
+parameters > environment > config file > defaults.
+
+#### Per-Tool Env Vars
+
+Every tool can be toggled individually via `JOPLIN_TOOL_<NAME>=true|false`. These take precedence over config file settings.
+
+| Env var | Default |
+|---------|---------|
+| `JOPLIN_TOOL_FIND_NOTES` | `true` |
+| `JOPLIN_TOOL_FIND_NOTES_WITH_TAG` | `true` |
+| `JOPLIN_TOOL_FIND_NOTES_IN_NOTEBOOK` | `true` |
+| `JOPLIN_TOOL_FIND_IN_NOTE` | `true` |
+| `JOPLIN_TOOL_GET_ALL_NOTES` | `false` |
+| `JOPLIN_TOOL_GET_NOTE` | `true` |
+| `JOPLIN_TOOL_GET_LINKS` | `true` |
+| `JOPLIN_TOOL_CREATE_NOTE` | `true` |
+| `JOPLIN_TOOL_UPDATE_NOTE` | `true` |
+| `JOPLIN_TOOL_EDIT_NOTE` | `true` |
+| `JOPLIN_TOOL_DELETE_NOTE` | `false` |
+| `JOPLIN_TOOL_LIST_NOTEBOOKS` | `true` |
+| `JOPLIN_TOOL_CREATE_NOTEBOOK` | `true` |
+| `JOPLIN_TOOL_UPDATE_NOTEBOOK` | `false` |
+| `JOPLIN_TOOL_DELETE_NOTEBOOK` | `false` |
+| `JOPLIN_TOOL_LIST_TAGS` | `true` |
+| `JOPLIN_TOOL_CREATE_TAG` | `true` |
+| `JOPLIN_TOOL_UPDATE_TAG` | `false` |
+| `JOPLIN_TOOL_DELETE_TAG` | `false` |
+| `JOPLIN_TOOL_GET_TAGS_BY_NOTE` | `true` |
+| `JOPLIN_TOOL_TAG_NOTE` | `true` |
+| `JOPLIN_TOOL_UNTAG_NOTE` | `true` |
+| `JOPLIN_TOOL_PING_JOPLIN` | `true` |
+| `JOPLIN_TOOL_RESTORE_FROM_TRASH` | `true` |
+| `JOPLIN_TOOL_IMPORT_FROM_FILE` | `false` |
+
+#### Notebook Allowlist Env Var
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `JOPLIN_NOTEBOOK_ALLOWLIST` | *(not set)* | Comma-separated list of notebook patterns (e.g., `Work,Projects/*,!Projects/Secret`). Not set means no restriction; set but empty denies every notebook |
+
+### HTTP Transport Support
+
+The server supports both STDIO and HTTP transports:
+
+```bash
+# STDIO (default)
+joplin-mcp-server --config ~/.joplin-mcp.json
+
+# HTTP transport (development, from repo)
+PYTHONPATH=src python -m joplin_mcp.server --transport http --port 8000 --config ./joplin-mcp.json
+
+# Opt-in HTTP compatibility bundle (modern + legacy SSE endpoints)
+PYTHONPATH=src python -m joplin_mcp.server --transport http-compat --port 8000 --config ./joplin-mcp.json
+# or keep --transport http and export MCP_HTTP_COMPAT=1/true to toggle the same behavior.
+```
+
+#### HTTP client config
+
+Note: Claude Desktop currently uses STDIO transport and does not consume HTTP/SSE configs directly. The following example applies to clients that support network transports.
+```json
+{
+  "mcpServers": {
+    "joplin": {
+      "transport": "http",
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
+### Configuration Reference
+
+#### Basic Settings
+| Option | Default | Description |
+|--------|---------|-------------|
+| `token` | *required* | Joplin API authentication token |
+| `host` | `localhost` | Joplin server hostname |
+| `port` | `41184` | Joplin Web Clipper port |
+| `timeout` | `30` | Request timeout in seconds |
+| `verify_ssl` | `false` | SSL certificate verification |
+
+#### Tool Permissions
+| Option | Default | Description |
+|--------|---------|-------------|
+| `tools.create_note` | `true` | Allow creating new notes |
+| `tools.update_note` | `true` | Allow modifying existing notes |
+| `tools.edit_note` | `true` | Allow precision edits (find/replace, append, prepend) |
+| `tools.delete_note` | `false` | Allow deleting notes *(disabled by default — destructive)* |
+| `tools.create_notebook` | `true` | Allow creating new notebooks |
+| `tools.update_notebook` | `false` | Allow modifying notebook titles and emoji icons |
+| `tools.delete_notebook` | `false` | Allow deleting notebooks *(disabled by default — destructive)* |
+| `tools.create_tag` | `true` | Allow creating new tags |
+| `tools.update_tag` | `false` | Allow modifying tag titles |
+| `tools.delete_tag` | `false` | Allow deleting tags *(disabled by default — destructive)* |
+| `tools.tag_note` | `true` | Allow adding tags to notes |
+| `tools.untag_note` | `true` | Allow removing tags from notes |
+| `tools.restore_from_trash` | `true` | Allow restoring soft-deleted notes or notebooks |
+| `tools.find_notes` | `true` | Allow text search across notes (with task filtering) |
+| `tools.find_notes_with_tag` | `true` | Allow finding notes by tag (with task filtering) |
+| `tools.find_notes_in_notebook` | `true` | Allow finding notes by notebook (with task filtering) |
+| `tools.find_in_note` | `true` | Allow regex search within a single note |
+| `tools.get_all_notes` | `false` | Allow getting all notes (disabled by default - can fill context window) |
+| `tools.get_note` | `true` | Allow getting specific notes |
+| `tools.get_note_resources` | `true` | Allow reading a note's resources and their OCR text |
+| `tools.get_links` | `true` | Allow extracting links to other notes |
+| `tools.list_notebooks` | `true` | Allow listing all notebooks |
+| `tools.list_tags` | `true` | Allow listing all tags |
+| `tools.get_tags_by_note` | `true` | Allow getting tags for specific notes |
+| `tools.ping_joplin` | `true` | Allow testing server connectivity |
+| `tools.import_from_file` | `false` | Allow importing files/directories (MD, HTML, CSV, TXT, JEX) |
+
+#### Notebook Allowlist
+| Option | Default | Description |
+|--------|---------|-------------|
+| `notebook_allowlist` | `null` | List of notebook patterns to allow access to. `null` = no restriction. Supports gitignore-style patterns: exact names, `*` wildcards, `**` recursive, `!` negation |
+
+#### Content Exposure (Privacy Settings)
+| Option | Default | Description |
+|--------|---------|-------------|
+| `content_exposure.search_results` | `"preview"` | Content visibility in all search and listing results: `"none"`, `"preview"`, `"full"` |
+| `content_exposure.individual_notes` | `"full"` | Content visibility for individual notes: `"none"`, `"preview"`, `"full"` |
+| `content_exposure.max_preview_length` | `300` | Maximum length of content previews (characters) |
+| `content_exposure.smart_toc_threshold` | `2000` | Notes longer than this show a table of contents instead of the full body |
+| `content_exposure.enable_smart_toc` | `true` | Turn the table-of-contents fallback off to always return full note bodies |
+| `content_exposure.output_hints` | `false` | Emit worked follow-up calls (`NEXT_STEPS`, `NEXT_PAGE`) alongside results. Useful for smaller models, repetition for capable ones |
+
+Lowering `max_preview_length` and `smart_toc_threshold`, or setting
+`search_results` to `"none"`, is the main way to cut how many tokens a
+session spends. `list_notebooks` and `list_tags` return only the fields
+an agent acts on; pass `verbose=True` for icons, parent ids and
+timestamps. See [docs/content-privacy.md](docs/content-privacy.md).
+
+## Docker
+
+Run the MCP server in a container. Default transport is HTTP for broad compatibility; switch via environment variables.
+
+### Build
+```bash
+docker build -t joplin-mcp .
+```
+
+### Run (HTTP default)
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -e JOPLIN_TOKEN=your_api_token \
+  joplin-mcp
+```
+
+### With mounted config
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -v $PWD/joplin-mcp.json:/config/joplin-mcp.json:ro \
+  joplin-mcp
+```
+
+### Choose transport
+- SSE (streaming): `-e MCP_TRANSPORT=sse`
+- Streamable HTTP: `-e MCP_TRANSPORT=streamable-http`
+- STDIO (no port): `-e MCP_TRANSPORT=stdio`
+
+Example (SSE):
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -e JOPLIN_TOKEN=your_api_token \
+  -e MCP_TRANSPORT=sse \
+  joplin-mcp
+```
+
+The container listens on `0.0.0.0:8000` by default. If exposing publicly, place behind a reverse proxy and terminate TLS there. For SSE, ensure proxy keep-alives and buffering are configured appropriately.
+
+
+## Project Structure
+
+- **`src/joplin_mcp/`** - Main package directory
+  - `fastmcp_server.py` - Server implementation with 26 tools and Pydantic validation types
+  - `config.py` - Configuration management (including notebook allowlist)
+  - `notebook_utils.py` - Notebook path resolution, allowlist matching, and caching
+  - `server.py` - Server entrypoint (module and CLI)
+  - `tools/` - Tool implementations (notes, notebooks, tags)
+  - `ui_integration.py` - UI integration utilities
+- **`docs/`** - Documentation (troubleshooting, privacy controls, enhancement proposals)
+- **`tests/`** - Unit test suite
+- **`tests/e2e/`** - End-to-end tests against a real Joplin Desk
